@@ -1,0 +1,36 @@
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase
+.firebase/
+
+# Parquet cache
+/tmp/jobhive_cache/
+
+# Secrets
+*.key
+*.pem
+serviceAccountKey*.json
