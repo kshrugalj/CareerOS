@@ -34,3 +34,4 @@ Thumbs.db
 *.key
 *.pem
 serviceAccountKey*.json
+.aider*

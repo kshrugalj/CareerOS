@@ -22,19 +22,15 @@ discovery = JobDiscoveryService()
 groq_client = GroqClient()
 
 
-def _keyword_score(job_title: str, job_description: str, resume_text: str) -> float:
+def _keyword_score(job_title: str, job_description: str, resume_words: set) -> float:
     """Fast keyword-based match score (no AI calls). Title weighted 3x."""
-    if not resume_text:
+    if not resume_words:
         return 0.0
-    resume_lower = resume_text.lower()
     title = job_title.lower()
     description = job_description.lower()
     text = f"{title} {title} {title} {description}"
-    words = set(re.findall(r"[a-zA-Z][a-zA-Z0-9+#.]+", resume_lower))
-    if not words:
-        return 0.0
-    matches = sum(1 for w in words if w in text)
-    return min(round(matches / max(len(words), 1) * 1.5, 2), 1.0)
+    matches = sum(1 for w in resume_words if w in text)
+    return min(round(matches / max(len(resume_words), 1) * 1.5, 2), 1.0)
 
 
 def _title_match_score(desired_title: str, job_title: str) -> float:
@@ -151,6 +147,9 @@ async def search_jobs(
     db = get_firebase_db()
     candidate_doc = db.collection("candidates").document(user_id).get()
     resume_text = candidate_doc.to_dict().get("resume_text", "") if candidate_doc.exists else ""
+    resume_words = set()
+    if resume_text:
+        resume_words = set(re.findall(r"[a-zA-Z][a-zA-Z0-9+#.]+", resume_text.lower()))
 
     # Groq batch title matching
     job_titles = [j.title for j in jobs]
@@ -170,8 +169,8 @@ async def search_jobs(
             job_dict["title_match_score"] = groq_scores.get(job.title, 0.0)
         else:
             job_dict["title_match_score"] = _title_match_score(desired_title, job.title)
-        if resume_text:
-            job_dict["score"] = _keyword_score(job.title, job.description, resume_text)
+        if resume_words:
+            job_dict["score"] = _keyword_score(job.title, job.description, resume_words)
         result_jobs.append(job_dict)
 
     # Filter to US-based jobs only

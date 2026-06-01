@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import logging
 import os
 import re
@@ -64,7 +65,7 @@ def _load_to_disk(ats: str) -> pd.DataFrame:
         df = _download_full(ats, path)
 
     # Write filtered copy (recent only) for faster subsequent reads
-    recent = _filter_recent(df.copy())
+    recent = _filter_recent(df)
     try:
         tmp = recent_path + ".tmp"
         recent.to_parquet(tmp)
@@ -126,6 +127,37 @@ def _normalize_company(ats: str, row) -> str:
     return raw
 
 
+def _warm_pool():
+    return True
+
+def _process_slice(ats: str, df: pd.DataFrame, pattern: Optional[str], limit: int) -> list[Job]:
+    if pattern:
+        mask = df["title"].fillna("").str.lower().str.contains(pattern, na=False)
+        df = df[mask]
+    if df.empty:
+        return []
+    df = df.fillna("")
+    results = []
+    count = 0
+    for row in df.itertuples(index=False):
+        url = str(row.apply_url or row.url or "")
+        if is_rejected_source(url):
+            continue
+        results.append(Job(
+            title=str(row.title or ""),
+            company=_normalize_company(ats, row),
+            location=str(row.location or row.ats_id or ""),
+            apply_url=url,
+            source=f"jobhive_{ats}",
+            verified_company_link=True,
+            description=str(row.description or ""),
+        ))
+        count += 1
+        if limit is not None and count >= limit:
+            break
+    return results
+
+
 class JobhiveClient:
     def __init__(self):
         self._ready = False
@@ -133,7 +165,11 @@ class JobhiveClient:
         self._warmup_task: Optional[asyncio.Task] = None
         self._warmup_progress = {"done": 0, "total": len(ATS_SLICES)}
         self._http_client = httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True)
-        self._io_sem = asyncio.Semaphore(4)
+        self._io_sem = asyncio.Semaphore(8)
+        self._pool = concurrent.futures.ProcessPoolExecutor(max_workers=8)
+        for _ in range(8):
+            self._pool.submit(_warm_pool)
+        self._dfs: dict[str, pd.DataFrame] = {}
 
     async def start_warmup(self):
         if self._warmup_task is not None:
@@ -157,8 +193,8 @@ class JobhiveClient:
 
         for i, ats in enumerate(ATS_SLICES):
             try:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, lambda a=ats: _load_to_disk(a))
+                df = await asyncio.get_running_loop().run_in_executor(None, lambda a=ats: _load_to_disk(a))
+                self._dfs[ats] = df
                 self._warmup_progress["done"] = i + 1
                 logger.info("Jobhive warmup: %s ready (%d/%d)", ats, i + 1, total)
             except Exception as e:
@@ -166,69 +202,41 @@ class JobhiveClient:
                 self._warmup_progress["done"] = i + 1
 
         self._ready = True
-        logger.info("Jobhive warmup: complete — %d ATS slices on disk", total)
+        logger.info("Jobhive warmup: complete — %d ATS slices in memory", total)
 
     @property
     def is_ready(self) -> bool:
         return self._ready
 
     async def search(self, query: str, limit: int = 200) -> list[Job]:
-        loop = asyncio.get_event_loop()
         keywords = [w.strip() for w in query.replace(",", " ").split() if len(w.strip()) > 1] if query else []
-        query_pattern = None
-        if keywords:
-            query_pattern = "|".join(re.escape(k) for k in keywords)
+        pattern = "|".join(re.escape(k) for k in keywords) if keywords else None
+        t0 = time.time()
 
-        async def search_one(ats: str) -> list[Job]:
-            async with self._io_sem:
-                try:
-                    df = await loop.run_in_executor(
-                        None, lambda a=ats: _load_to_disk(a),
-                    )
-                except Exception as e:
-                    logger.debug("Jobhive disk read failed for %s: %s", ats, e)
-                    return []
-                results = []
-                count = 0
-                for row in df.itertuples(index=False):
-                    title = str(getattr(row, "title", "") or "")
-                    if query_pattern and keywords:
-                        title_lower = title.lower()
-                        if not any(kw in title_lower for kw in keywords):
-                            continue
-                    url = getattr(row, "apply_url", None) or getattr(row, "url", "") or ""
-                    if is_rejected_source(url):
-                        continue
-                    company = _normalize_company(ats, row)
-                    results.append(Job(
-                        title=title,
-                        company=company,
-                        location=str(getattr(row, "location", "") or ""),
-                        apply_url=url,
-                        source=f"jobhive_{ats}",
-                        verified_company_link=True,
-                        description=str(getattr(row, "description", "") or ""),
-                    ))
-                    count += 1
-                    if limit is not None and count >= limit:
-                        break
-                return results
+        def get_df(ats: str) -> pd.DataFrame:
+            df = self._dfs.get(ats)
+            if df is None:
+                df = _load_to_disk(ats)
+                self._dfs[ats] = df
+            return df.head(20000) if len(df) > 20000 else df
 
-        tasks = [search_one(ats) for ats in ATS_SLICES]
-        batch_results = await asyncio.gather(*tasks)
+        args_list = [(ats, get_df(ats), pattern, limit) for ats in ATS_SLICES]
+
+        futures = [self._pool.submit(_process_slice, *args) for args in args_list]
+        batch_results = []
+        for f in futures:
+            try:
+                batch_results.append(f.result())
+            except Exception as e:
+                logger.debug("Jobhive process failed: %s", e)
+                batch_results.append([])
 
         all_jobs = []
         for jobs in batch_results:
             all_jobs.extend(jobs)
 
-        logger.info("Jobhive search: %d jobs from %d ATS types", len(all_jobs), len(ATS_SLICES))
-        return all_jobs
-
-        all_jobs = []
-        for jobs in batch_results:
-            all_jobs.extend(jobs)
-
-        logger.info("Jobhive search: %d jobs from %d ATS types", len(all_jobs), len(ATS_SLICES))
+        logger.info("Jobhive search: %d jobs from %d ATS types in %.1fs",
+                     len(all_jobs), len(ATS_SLICES), time.time()-t0)
         return all_jobs
 
 

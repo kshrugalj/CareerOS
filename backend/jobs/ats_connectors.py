@@ -288,9 +288,17 @@ class JobDiscoveryService:
         jobhive_jobs = await jobhive_client.search(query, limit=200)
         logger.info("Fetched %d jobs from jobhive", len(jobhive_jobs))
 
-        # Collect whatever ATS results are ready within a short timeout
-        ats_timeout = 5 if len(jobhive_jobs) >= 100 else 25
-        done, _ = await asyncio.wait(ats_task_list, timeout=ats_timeout)
+        # Collect whatever ATS results are ready — skip wait if jobhive already has enough
+        if len(jobhive_jobs) >= 200:
+            done = []
+            for t in ats_task_list:
+                if t.done():
+                    done.append(t)
+                else:
+                    t.cancel()
+        else:
+            ats_timeout = 5 if len(jobhive_jobs) >= 100 else 25
+            done, _ = await asyncio.wait(ats_task_list, timeout=ats_timeout)
         all_jobs = list(jobhive_jobs)
         for t in done:
             try:
@@ -298,8 +306,6 @@ class JobDiscoveryService:
                 all_jobs.extend(r)
             except Exception:
                 pass
-        if len(done) < len(ats_task_list):
-            logger.warning("ATS fetch: %d/%d done in %ds", len(done), len(ats_task_list), ats_timeout)
 
         all_jobs.sort(key=lambda j: j.title)
         return self.deduplicate(all_jobs)
