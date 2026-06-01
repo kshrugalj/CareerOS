@@ -16,9 +16,14 @@ def _cache_key(company: str, provider: str) -> str:
 
 
 async def get_cached_jobs(company: str, provider: str) -> list[dict] | None:
-    try:
+    def _sync_get():
         db = get_firebase_db()
-        doc = db.collection(CACHE_COLLECTION).document(_cache_key(company, provider)).get()
+        return db.collection(CACHE_COLLECTION).document(_cache_key(company, provider)).get()
+
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        doc = await loop.run_in_executor(None, _sync_get)
         if not doc.exists:
             return None
         data = doc.to_dict()
@@ -38,8 +43,16 @@ async def get_cached_jobs(company: str, provider: str) -> list[dict] | None:
 
 
 async def set_cached_jobs(company: str, provider: str, jobs: list[dict]) -> None:
-    try:
+    def _sync_set(payload_jobs):
         db = get_firebase_db()
+        db.collection(CACHE_COLLECTION).document(_cache_key(company, provider)).set({
+            "company": company,
+            "provider": provider,
+            "jobs": payload_jobs,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    try:
         MAX_BYTES = 900_000  # Firestore limit is 1MB, leave room for metadata
         import json
         payload = json.dumps(jobs, default=str).encode()
@@ -54,12 +67,11 @@ async def set_cached_jobs(company: str, provider: str, jobs: list[dict]) -> None
                     hi = mid - 1
             jobs = jobs[:lo]
             logger.info("Truncated %s (%s) cache to %d jobs (size limit)", company, provider, lo)
-        db.collection(CACHE_COLLECTION).document(_cache_key(company, provider)).set({
-            "company": company,
-            "provider": provider,
-            "jobs": jobs,
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-        })
+        
+        import asyncio
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: _sync_set(jobs))
         logger.info("Cached %d jobs for %s (%s)", len(jobs), company, provider)
     except Exception as e:
         logger.warning("Cache write error for %s (%s): %s", company, provider, e)
+

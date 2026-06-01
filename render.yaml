@@ -10,7 +10,7 @@ services:
     envVars:
       # Memory optimization flags for free tier
       - key: DISABLE_WARMUP
-        value: "true"
+        value: "false"
       - key: LOW_MEMORY
         value: "true"
       # Firebase — paste your service account JSON as a single string
