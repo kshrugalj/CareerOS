@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: careeros-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: ohio
+    healthCheckPath: /health
+    envVars:
+      # Memory optimization flags for free tier
+      - key: DISABLE_WARMUP
+        value: "true"
+      - key: LOW_MEMORY
+        value: "true"
+      # Firebase — paste your service account JSON as a single string
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      # Groq LLM
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: "llama-3.3-70b-versatile"
+      # Search settings
+      - key: MAX_JOBS_PER_RUN
+        value: "100"
+      - key: SCORE_THRESHOLD
+        value: "0.70"
+      - key: REMOTE_ONLY
+        value: "true"
+      # CORS — set this to your Vercel frontend URL after deploying
+      - key: FRONTEND_URL
+        sync: false

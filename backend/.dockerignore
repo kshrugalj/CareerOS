@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+.git/
+.gitignore
+
+# Firebase service account key — use FIREBASE_SERVICE_ACCOUNT_JSON env var instead
+careeros-*.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# npm (not needed for Python backend)
+node_modules/
+package-lock.json

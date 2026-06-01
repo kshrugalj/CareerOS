@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -17,6 +18,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+DISABLE_WARMUP = os.environ.get("DISABLE_WARMUP", "").lower() in ("true", "1", "yes")
 
 
 async def warmup_ats_cache():
@@ -51,11 +54,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Firebase not available at startup: {e}")
 
-    asyncio.create_task(jobhive_client.start_warmup())
-    logger.info("Jobhive warmup started in background")
+    if DISABLE_WARMUP:
+        logger.info("DISABLE_WARMUP=true — skipping jobhive and ATS warmup (low-memory mode)")
+    else:
+        asyncio.create_task(jobhive_client.start_warmup())
+        logger.info("Jobhive warmup started in background")
 
-    asyncio.create_task(warmup_ats_cache())
-    logger.info("ATS cache warmup started in background")
+        asyncio.create_task(warmup_ats_cache())
+        logger.info("ATS cache warmup started in background")
 
     yield
 
@@ -67,9 +73,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Allow specific origins; add your Vercel URL after deploying
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# Append Vercel/production frontend URL if set
+_frontend_url = os.environ.get("FRONTEND_URL", "")
+if _frontend_url:
+    ALLOWED_ORIGINS.append(_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,3 +114,4 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "version": "3.0.0"}
+

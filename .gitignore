@@ -34,4 +34,5 @@ Thumbs.db
 *.key
 *.pem
 serviceAccountKey*.json
+careeros-*-firebase-adminsdk-*.json
 .aider*

@@ -16,6 +16,8 @@ from utils.validators import is_rejected_source
 
 logger = logging.getLogger(__name__)
 
+LOW_MEMORY = os.environ.get("LOW_MEMORY", "").lower() in ("true", "1", "yes")
+
 CACHE_DIR = "/tmp/jobhive_cache"
 CACHE_TTL = 86400
 PARQUET_BASE = "https://storage.stapply.ai/jobhive/v1/{ats}/jobs.parquet"
@@ -165,11 +167,20 @@ class JobhiveClient:
         self._warmup_task: Optional[asyncio.Task] = None
         self._warmup_progress = {"done": 0, "total": len(ATS_SLICES)}
         self._http_client = httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True)
-        self._io_sem = asyncio.Semaphore(8)
-        self._pool = concurrent.futures.ProcessPoolExecutor(max_workers=8)
-        for _ in range(8):
-            self._pool.submit(_warm_pool)
-        self._dfs: dict[str, pd.DataFrame] = {}
+
+        if LOW_MEMORY:
+            # Render free tier: ThreadPoolExecutor uses ~0 extra memory vs
+            # ProcessPoolExecutor which forks 8 processes each importing pandas (~400 MB)
+            logger.info("LOW_MEMORY mode: using ThreadPoolExecutor(2), no DataFrame cache")
+            self._io_sem = asyncio.Semaphore(4)
+            self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            self._dfs: dict[str, pd.DataFrame] = {}
+        else:
+            self._io_sem = asyncio.Semaphore(8)
+            self._pool = concurrent.futures.ProcessPoolExecutor(max_workers=8)
+            for _ in range(8):
+                self._pool.submit(_warm_pool)
+            self._dfs: dict[str, pd.DataFrame] = {}
 
     async def start_warmup(self):
         if self._warmup_task is not None:
@@ -194,7 +205,9 @@ class JobhiveClient:
         for i, ats in enumerate(ATS_SLICES):
             try:
                 df = await asyncio.get_running_loop().run_in_executor(None, lambda a=ats: _load_to_disk(a))
-                self._dfs[ats] = df
+                if not LOW_MEMORY:
+                    # Only cache in memory when we have RAM to spare
+                    self._dfs[ats] = df
                 self._warmup_progress["done"] = i + 1
                 logger.info("Jobhive warmup: %s ready (%d/%d)", ats, i + 1, total)
             except Exception as e:
@@ -202,7 +215,7 @@ class JobhiveClient:
                 self._warmup_progress["done"] = i + 1
 
         self._ready = True
-        logger.info("Jobhive warmup: complete — %d ATS slices in memory", total)
+        logger.info("Jobhive warmup: complete — %d ATS slices processed", total)
 
     @property
     def is_ready(self) -> bool:
@@ -214,9 +227,13 @@ class JobhiveClient:
         t0 = time.time()
 
         def get_df(ats: str) -> pd.DataFrame:
-            df = self._dfs.get(ats)
-            if df is None:
-                df = _load_to_disk(ats)
+            if not LOW_MEMORY:
+                df = self._dfs.get(ats)
+                if df is not None:
+                    return df.head(20000) if len(df) > 20000 else df
+            # In low-memory mode (or cache miss), always read from disk
+            df = _load_to_disk(ats)
+            if not LOW_MEMORY:
                 self._dfs[ats] = df
             return df.head(20000) if len(df) > 20000 else df
 

@@ -1,6 +1,6 @@
 import { auth } from "./firebase"
 
-const BASE_URL = "http://localhost:8204"
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8204"
 export { BASE_URL }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
