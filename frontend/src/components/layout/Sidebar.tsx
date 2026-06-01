@@ -41,7 +41,7 @@ export function Sidebar() {
             "> watcher ready.",
             ">  ",
             "> job_search --discover",
-            "> scanning 35+ sources",
+            "> scanning 111+ sources",
             "> matching against profile",
             "> results: 247 listings",
           ].map((line, i) => (

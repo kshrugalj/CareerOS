@@ -32,6 +32,6 @@ services:
         value: "0.70"
       - key: REMOTE_ONLY
         value: "true"
-      # CORS — set this to your Vercel frontend URL after deploying
+      # CORS — Vercel frontend URL
       - key: FRONTEND_URL
-        sync: false
+        value: "https://careeros-sand.vercel.app"

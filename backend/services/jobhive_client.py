@@ -41,6 +41,9 @@ ATS_SLICES = [
     "meta", "uber",
 ]
 
+# These parquet files are too large (100+ MB) for 512 MB RAM environments
+LARGE_SLICES = {"workday", "successfactors", "icims", "taleo", "oracle"}
+
 
 def _cache_path(ats: str) -> str:
     return f"{CACHE_DIR}/{ats}.parquet"
@@ -199,10 +202,14 @@ class JobhiveClient:
             await task
 
     async def _warmup(self):
-        total = len(ATS_SLICES)
+        slices = [s for s in ATS_SLICES if not (LOW_MEMORY and s in LARGE_SLICES)]
+        total = len(slices)
+        skipped = len(ATS_SLICES) - total
+        if skipped:
+            logger.info("LOW_MEMORY: skipping %d large ATS slices (%s)", skipped, LARGE_SLICES)
         logger.info("Jobhive warmup: downloading %d ATS slices to disk", total)
 
-        for i, ats in enumerate(ATS_SLICES):
+        for i, ats in enumerate(slices):
             try:
                 df = await asyncio.get_running_loop().run_in_executor(None, lambda a=ats: _load_to_disk(a))
                 if not LOW_MEMORY:
@@ -226,18 +233,40 @@ class JobhiveClient:
         pattern = "|".join(re.escape(k) for k in keywords) if keywords else None
         t0 = time.time()
 
-        def get_df(ats: str) -> pd.DataFrame:
+        def get_df(ats: str) -> Optional[pd.DataFrame]:
             if not LOW_MEMORY:
                 df = self._dfs.get(ats)
                 if df is not None:
                     return df.head(20000) if len(df) > 20000 else df
-            # In low-memory mode (or cache miss), always read from disk
-            df = _load_to_disk(ats)
-            if not LOW_MEMORY:
+                # Not in memory, try disk
+                df = _load_to_disk(ats)
                 self._dfs[ats] = df
-            return df.head(20000) if len(df) > 20000 else df
+                return df.head(20000) if len(df) > 20000 else df
 
-        args_list = [(ats, get_df(ats), pattern, limit) for ats in ATS_SLICES]
+            # LOW_MEMORY mode: only use files already cached on disk — never download during search
+            recent_path = f"{CACHE_DIR}/{ats}_recent.parquet"
+            full_path = _cache_path(ats)
+            for path in (recent_path, full_path):
+                if os.path.exists(path):
+                    try:
+                        df = pd.read_parquet(path, columns=NEEDED_COLS)
+                        return df.head(20000) if len(df) > 20000 else df
+                    except Exception:
+                        pass
+            # Not cached yet — skip this slice (warmup will download it in background)
+            return None
+
+        args_list = []
+        skipped = 0
+        for ats in ATS_SLICES:
+            df = get_df(ats)
+            if df is not None:
+                args_list.append((ats, df, pattern, limit))
+            else:
+                skipped += 1
+
+        if skipped:
+            logger.info("Jobhive search: skipped %d uncached slices", skipped)
 
         futures = [self._pool.submit(_process_slice, *args) for args in args_list]
         batch_results = []
@@ -252,8 +281,8 @@ class JobhiveClient:
         for jobs in batch_results:
             all_jobs.extend(jobs)
 
-        logger.info("Jobhive search: %d jobs from %d ATS types in %.1fs",
-                     len(all_jobs), len(ATS_SLICES), time.time()-t0)
+        logger.info("Jobhive search: %d jobs from %d ATS types (%d cached) in %.1fs",
+                     len(all_jobs), len(ATS_SLICES), len(args_list), time.time()-t0)
         return all_jobs
 
 

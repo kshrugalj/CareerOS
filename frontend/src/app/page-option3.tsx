@@ -107,7 +107,7 @@ function BelowFold() {
     >
       <div className="grid gap-6 sm:grid-cols-3">
         {[
-          { value: "35+", label: "companies" },
+          { value: "111+", label: "companies" },
           { value: "3", label: "ATS sources" },
           { value: "95%", label: "match accuracy" },
         ].map((stat, i) => (
@@ -215,7 +215,7 @@ export function LandingOption3() {
           transition={{ delay: 1.5, duration: 0.6 }}
           className="border-t-2 border-border px-12 pt-6 text-center font-mono text-xs text-ink-3"
         >
-          &gt; 3 ATS sources &middot; 35+ companies &middot; AI matching
+          &gt; 3 ATS sources &middot; 111+ companies &middot; AI matching
         </motion.div>
       </div>
 

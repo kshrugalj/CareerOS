@@ -22,8 +22,27 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "CareerOS",
-  description: "AI-Powered Job Search & Application Tracking",
+  metadataBase: new URL("https://careeros-sand.vercel.app"),
+  title: {
+    default: "CareerOS",
+    template: "%s | CareerOS",
+  },
+  description: "AI-powered direct-company job search & application tracking. Discover roles at 111+ companies, parse resumes, generate cover letters, and track your pipeline.",
+  keywords: ["job search", "AI", "career", "application tracking", "resume", "cover letter", "CareerOS"],
+  authors: [{ name: "kshrugalj", url: "https://github.com/kshrugalj" }],
+  openGraph: {
+    title: "CareerOS",
+    description: "AI-powered direct-company job search & application tracking platform.",
+    url: "https://careeros-sand.vercel.app",
+    siteName: "CareerOS",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CareerOS",
+    description: "AI-powered direct-company job search & application tracking platform.",
+  },
 }
 
 export default function RootLayout({

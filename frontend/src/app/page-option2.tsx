@@ -54,7 +54,7 @@ function HeroCopy() {
       </motion.h1>
 
       <motion.p variants={fadeUp} className="mt-5 text-balance text-base leading-relaxed text-ink-3">
-        Direct company job search powered by AI. We parse resumes, discover roles at 35+
+        Direct company job search powered by AI. We parse resumes, discover roles at 111+
         companies, generate cover letters, and track your entire pipeline &mdash; in one
         dashboard.
       </motion.p>
@@ -155,7 +155,7 @@ export function LandingOption2() {
           <span className="h-1 w-1 rounded-full bg-ink-3" />
           <span>ashby</span>
           <span className="h-1 w-1 rounded-full bg-ink-3" />
-          <span>35+ companies</span>
+          <span>111+ companies</span>
           <span className="h-1 w-1 rounded-full bg-ink-3" />
           <span>ai matching</span>
         </motion.div>

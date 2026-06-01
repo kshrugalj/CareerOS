@@ -73,20 +73,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Allow specific origins; add your Vercel URL after deploying
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
-# Append Vercel/production frontend URL if set
-_frontend_url = os.environ.get("FRONTEND_URL", "")
-if _frontend_url:
-    ALLOWED_ORIGINS.append(_frontend_url)
-
+# CORS — allow all origins for now; tighten after deployment is verified
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -38,7 +38,7 @@ const terminalLine = (i: number) => ({
 const terminalLogs = [
   "> job_search --discover --ai --source=all",
   "> LLM pipeline initialized",
-  "> scanning 35+ company boards",
+  "> scanning 111+ company boards",
   "> deduplicating results...",
   "> pipeline ready. █",
 ]
@@ -131,7 +131,7 @@ function HeroPane() {
         >
           <span>3 ATS sources</span>
           <span className="h-1 w-1 rounded-full bg-ink-3" />
-          <span>35+ companies</span>
+          <span>111+ companies</span>
           <span className="h-1 w-1 rounded-full bg-ink-3" />
           <span>AI matching</span>
         </motion.div>
