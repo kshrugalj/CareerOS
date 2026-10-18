@@ -36,3 +36,7 @@ Thumbs.db
 serviceAccountKey*.json
 careeros-*-firebase-adminsdk-*.json
 .aider*
+
+# Tool databases / local state
+.crush/
+path/
